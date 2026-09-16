@@ -12,6 +12,7 @@ Kaggle: https://www.kaggle.com/competitions/playground-series-s6e7
 - [x] `stress_level` 예측 대치 시도 (`notebooks/05_stress_level_imputation.ipynb`) — **실패(기각). -0.00025, 최종본은 04 그대로 유지**
 - [x] `sleep_duration` 회귀 기반 정밀 대치 (`notebooks/06_sleep_duration_regression.ipynb`) — **애매한 결과. 대치 자체는 개선(RMSE ↓, 경계판정 ↑)됐지만 전체 CV는 -0.00013로 노이즈 수준. 최종본은 04 그대로 유지**
 - [x] Interaction 피처 + missing_count + Native NaN 실험 (`notebooks/07_interaction_and_native_nan.ipynb`, 팀원 XGBoost 리포트 아이디어 차용) — **전부 실패. 최종본은 04 그대로 유지**
+- [x] FT-Transformer + LightGBM 앙상블 (`notebooks/08_transformer_ensemble.ipynb`) — **Transformer 단독 0.94753(선전했으나 LightGBM보다 낮음), 최적 블렌딩 0.94994로 +0.00007(노이즈 수준). 최종본은 04 그대로 유지**
 - [ ] 결측 2개 이상 겹친 행 처리 — 다음 단계 (남은 유일한 실질적 개선 여지, 다만 표본이 작아 기대 효과는 제한적)
 - [ ] 제출
 
@@ -26,7 +27,8 @@ Kaggle: https://www.kaggle.com/competitions/playground-series-s6e7
 │   ├── 04_lgbm_tuning.ipynb              # Optuna 하이퍼파라미터 튜닝 (완료)
 │   ├── 05_stress_level_imputation.ipynb  # stress_level 예측 대치 실험 (완료, 기각)
 │   ├── 06_sleep_duration_regression.ipynb # sleep_duration 회귀 대치 실험 (완료, 기각)
-│   └── 07_interaction_and_native_nan.ipynb # interaction/missing_count/native NaN 실험 (완료, 기각)
+│   ├── 07_interaction_and_native_nan.ipynb # interaction/missing_count/native NaN 실험 (완료, 기각)
+│   └── 08_transformer_ensemble.ipynb     # FT-Transformer + LightGBM 앙상블 실험 (완료, 기각)
 └── playground-series-s6e7/
     ├── train.csv / test.csv / sample_submission.csv   # 원본
     └── processed/
@@ -37,7 +39,7 @@ Kaggle: https://www.kaggle.com/competitions/playground-series-s6e7
         └── submission_v2_tuned.csv # 04 결과 (사전확률 보정 + Optuna 튜닝) — 현재 최종본
 ```
 
-> **커널 안내**: `03`~`05` 노트북은 LightGBM(+Optuna)이 필요합니다. base(anaconda) 환경엔 없고 `teammate` conda 환경에 설치돼 있어서, 그 환경을 Jupyter 커널로 등록(`Python (teammate)`)해서 실행했습니다. 이 노트북들을 열 때는 커널을 **Python (teammate)**로 선택하세요.
+> **커널 안내**: `03`~`08` 노트북은 LightGBM(+Optuna)이 필요합니다(`08`은 추가로 PyTorch도 필요). base(anaconda) 환경엔 없고 `teammate` conda 환경에 설치돼 있어서, 그 환경을 Jupyter 커널로 등록(`Python (teammate)`)해서 실행했습니다. 이 노트북들을 열 때는 커널을 **Python (teammate)**로 선택하세요.
 >
 > **제출 안내**: `sample_submission.csv`는 전 행이 `at-risk`로만 채워진 템플릿 파일입니다 (BA 0.3333). Kaggle에 제출할 때 이 파일이 아니라 `processed/submission_v2_tuned.csv`를 올려야 합니다 — 실제로 이 둘을 헷갈려서 0.3333이 나온 적이 있었음.
 
@@ -305,16 +307,36 @@ sleep_duration 결측 행만 따로 본 BA: 0.86094.
 
 → **05, 06에 이어 3번째로 "baseline 대비 추가 피처가 도움이 안 되거나 해로웠다"는 패턴이 반복 확인됨.** 팀원의 XGBoost 파이프라인에서 효과가 있었던 아이디어라도, 이미 원본 피처만으로 핵심 신호를 다 활용하고 있는 저희 LightGBM 파이프라인에는 그대로 전이되지 않았음. **최종 제출은 `submission_v2_tuned.csv`(0.94987)를 계속 유지.** (노트북이 V0를 최고 성능으로 인식해 `submission_v5_interaction.csv`를 저장했으나, baseline과 피처 구성이 동일한 사실상 중복 파일 — 새로운 채택 아님.)
 
+## FT-Transformer + LightGBM 앙상블 실험 — 기각 (완료 — `notebooks/08_transformer_ensemble.ipynb`)
+
+타 팀이 Transformer + XGBoost 앙상블로 점수를 올렸다는 얘기를 계기로, 정형 데이터용 Transformer(피처를 토큰화해서 self-attention에 넣는 FT-Transformer 스타일, 직접 구현)를 04의 5-fold와 동일하게 학습해서 LightGBM과 앙상블 가능성을 검증하였다. `teammate` conda 환경에 PyTorch 2.14(Apple Silicon MPS 가속)를 추가 설치해서 실행.
+
+| | balanced accuracy |
+|---|---|
+| Transformer 단독 (5-fold OOF, 15 epoch) | 0.94753 |
+| LightGBM 단독 (04 재현) | 0.94988 |
+| 블렌딩 alpha 그리드서치 최적값(LightGBM 95% + Transformer 5%) | 0.94994 |
+| 04 baseline 대비 개선폭 | **+0.00007 (노이즈 수준)** |
+
+**Transformer 단독 성능이 예상보다 훨씬 선전함** — 처음부터 학습한 소규모 모델(d_model=32, 2-layer encoder)인데도 LightGBM보다 겨우 0.0024 낮은 수준까지 나왔다. "날카로운 threshold(6h/7h)를 트리보다 못 잡을 것"이라는 예상은 방향은 맞았지만 격차는 작았음 — 690k행이라는 충분한 데이터로 신경망도 threshold 함수를 상당히 잘 근사한 것으로 보인다.
+
+**그러나 블렌딩 alpha를 0(순수 Transformer)~1(순수 LightGBM)로 그리드서치한 결과가 거의 단조증가**해서 alpha=1.0 근처가 사실상 최고였고, alpha=0.95에서의 +0.00007는 다른 실험들(04 튜닝 +0.00007, 07 등)과 같은 자릿수의 노이즈 수준이다.
+
+**왜 "다른 모델 계열"인데도 앙상블 이득이 거의 없었나**: 앙상블이 이득을 보려면 두 모델의 오답 패턴이 달라야 한다. 그런데 저희 라벨은 몇 개 안 되는 피처의 명확한 규칙(핵심 발견 섹션)으로 생성돼 있어서, LightGBM도 Transformer도 결국 **같은 정답 함수를 근사**하고 있을 뿐이다. 두 모델 다 잘 맞히는 정도가 비슷하면 실수하는 지점도 상당 부분 겹치기 때문에, "모델 계열이 다르면 무조건 에러가 분산되어 앙상블이 이득"이라는 일반론이 신호가 뚜렷하고 이미 상한 근처인 데이터에서는 잘 통하지 않는다는 것을 확인한 사례.
+
+→ **최종 제출은 `submission_v2_tuned.csv`(0.94987)를 계속 유지.** (`submission_v6_transformer_blend.csv`는 저장은 됐으나 baseline과 사실상 동일한 수준이라 새로운 채택 아님.)
+
 ## 다음 단계
-`stress_level`/`sleep_duration` 복구, interaction/missing_count/native NaN 추가까지 총 5개 아이디어가 전부 유의미한 개선을 못 만들었으므로, 남은 개선 여지는 사실상 한 가지로 좁혀짐:
+`stress_level`/`sleep_duration` 복구, interaction/missing_count/native NaN 추가, Transformer 앙상블까지 총 6개 아이디어가 전부 유의미한 개선을 못 만들었으므로, 남은 개선 여지는 사실상 한 가지로 좁혀짐:
 1. **결측 2개 이상 겹친 행 처리** (약 2.3%, 이산화 기준 BA 0.56~0.81로 가장 취약한 구간) — 이 구간만 따로 떼어 분석/전용 전략 검토. 남은 개선 여지가 가장 많이 몰려있는 유일한 곳 (다만 표본이 작아 기대 효과는 제한적)
-2. (완료, 효과 미미) 모델 다양성/앙상블, 하이퍼파라미터 튜닝 — 실험으로 +0.0001 미만 확인됨
+2. (완료, 효과 미미) 모델 다양성/앙상블(class_weight, Transformer 블렌딩), 하이퍼파라미터 튜닝 — 실험으로 +0.0001 미만 확인됨
 3. (완료, 기각) `stress_level` 예측 대치 — 실험으로 -0.00025 확인됨, 재시도 불필요
 4. (완료, 기각) `sleep_duration` 회귀 기반 정밀 대치 — 대치 품질은 개선됐으나 최종 CV는 -0.00013로 노이즈 수준, 재시도 불필요
 5. (완료, 기각) Interaction 피처 / missing_count / native NaN — 셋 다 -0.0001~-0.0002 수준으로 하락, 재시도 불필요
-6. (완료) `diet_type`/`gender`/`heart_rate`/`water_intake`는 gain importance로도 무의미함이 재확인됨 — 추가 피처엔지니어링 불필요
+6. (완료, 기각) FT-Transformer + LightGBM 앙상블 — Transformer 단독은 선전(0.94753)했으나 블렌딩 이득은 +0.00007로 노이즈 수준, 재시도 불필요
+7. (완료) `diet_type`/`gender`/`heart_rate`/`water_intake`는 gain importance로도 무의미함이 재확인됨 — 추가 피처엔지니어링 불필요
 
-**현재까지 결론**: `submission_v2_tuned.csv`(CV balanced accuracy 0.94987)가 사실상의 실질적 상한으로 보임. 지금까지 시도한 5개의 개선 아이디어(예측 대치 2개, 피처 엔지니어링 3개)가 전부 실패했다는 것 자체가, 이 파이프라인이 "원본 피처 + 최소한의 결측 복구 + 올바른 결정규칙"만으로 이미 국소 최적점에 도달했다는 강한 증거임. 결측 2개 이상 겹친 행(전체의 2.3%, 약 15,900행)을 파고들어도 표본 자체가 작아서 기대 개선폭은 크지 않을 가능성이 높음 — 이 대회는 "더 나은 모델/피처"보다 "라벨 생성 규칙을 정확히 찾아내고 사전확률 보정을 올바르게 적용하는 것"이 점수의 대부분을 결정한다는 게 여러 번의 실험으로 재확인됨.
+**현재까지 결론**: `submission_v2_tuned.csv`(CV balanced accuracy 0.94987)가 사실상의 실질적 상한으로 보임. 지금까지 시도한 6개의 개선 아이디어(예측 대치 2개, 피처 엔지니어링 3개, 모델 앙상블 1개)가 전부 실패했다는 것 자체가, 이 파이프라인이 "원본 피처 + 최소한의 결측 복구 + 올바른 결정규칙"만으로 이미 국소 최적점에 도달했다는 강한 증거임. 결측 2개 이상 겹친 행(전체의 2.3%, 약 15,900행)을 파고들어도 표본 자체가 작아서 기대 개선폭은 크지 않을 가능성이 높음 — 이 대회는 "더 나은 모델/피처"보다 "라벨 생성 규칙을 정확히 찾아내고 사전확률 보정을 올바르게 적용하는 것"이 점수의 대부분을 결정한다는 게 여러 번의 실험으로 재확인됨.
 
 ## 출처
 - Yao Yan, Walter Reade, Elizabeth Park. Predicting Student Health Risk. https://kaggle.com/competitions/playground-series-s6e7, 2026. Kaggle.

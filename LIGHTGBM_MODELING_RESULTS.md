@@ -146,8 +146,9 @@ for col in ["stress_level", "sleep_duration", "physical_activity_level"]:
 | 07-V2 | baseline + `missing_count` 집계 피처 | 0.94977 | ❌ 기각 |
 | 07-V3 | baseline + native NaN(수치형 median 미대치) | 0.94977 | ❌ 기각 |
 | 07-V4 | baseline + 07-V1~V3 전부 결합 | 0.94970 | ❌ 기각 |
+| 08 | 04 + FT-Transformer 블렌딩(alpha=0.95) | 0.94994 | ❌ 기각(노이즈 수준) |
 
-> 이번 데이터에서는 **Feature를 더 추가하는 것이 항상 도움이 되지 않았다** — 이미 raw feature + 최소한의 복구 피처만으로 트리 모델이 핵심 상호작용을 거의 다 학습했기 때문에(3절), 추가 피처가 오히려 노이즈로 작용한 사례가 총 6건(05, 06, 07-V1~V4) 확인되었다. 최종 Feature Set은 **04(baseline + 복구 피처 2개)** 로 채택하였다.
+> 이번 데이터에서는 **Feature/모델을 더 추가하는 것이 항상 도움이 되지 않았다** — 이미 raw feature + 최소한의 복구 피처만으로 트리 모델이 핵심 상호작용을 거의 다 학습했기 때문에(3절), 추가 피처나 다른 모델과의 앙상블이 오히려 노이즈로 작용하거나 무의미했던 사례가 총 7건(05, 06, 07-V1~V4, 08) 확인되었다. 최종 Feature Set/모델은 **04(baseline + 복구 피처 2개, LightGBM 단독)** 로 채택하였다.
 
 ---
 
@@ -410,6 +411,34 @@ data["all_missing_count"] = data[ORIGINAL_FEATURE_COLS].isna().sum(axis=1)
 
 ---
 
+# 12-3. 추가 실험 — FT-Transformer + LightGBM 앙상블 (기각)
+
+"Transformer 계열은 LightGBM과 모델 구조가 완전히 달라서 앙상블 시 에러가 분산되어 이득이 클 것"이라는 가설을 검증하기 위해, 정형 데이터용 Transformer(FT-Transformer 스타일: 수치형은 피처별 선형 토크나이저, 범주형은 임베딩, 전부 토큰화해서 self-attention에 입력)를 PyTorch로 직접 구현하고 04와 동일한 5-fold로 학습, LightGBM과 블렌딩을 시도하였다.
+
+```python
+class FTTransformerLite(nn.Module):
+    def __init__(self, n_numeric, n_flags, cat_cardinalities, d_model=32, n_heads=4, n_layers=2):
+        # 수치형/플래그: 피처별 학습되는 (weight, bias)로 토큰화
+        # 범주형: nn.Embedding
+        # [CLS] 토큰 + TransformerEncoder(2 layers) -> 분류 head
+        ...
+```
+
+| | balanced accuracy |
+| --- | --- |
+| Transformer 단독 (5-fold OOF) | 0.94753 |
+| LightGBM 단독 (04 재현) | 0.94988 |
+| 블렌딩 최적 alpha(LightGBM 0.95 : Transformer 0.05) | 0.94994 |
+| 04 baseline 대비 개선폭 | **+0.00007 (노이즈 수준)** |
+
+**Transformer 단독 성능이 예상보다 훨씬 좋았다** — 처음 학습한 소규모 모델(2-layer, d_model=32)인데도 LightGBM과 0.0024 차이밖에 안 났다. `sleep_duration<6` 같은 날카로운 threshold를 트리보다 못 잡을 거라는 예상은 방향은 맞았지만 격차는 작았음 — 690k행이라는 데이터량 덕에 신경망도 threshold 함수를 상당히 잘 근사했다.
+
+**그러나 앙상블 alpha를 0~1로 그리드서치한 결과가 거의 단조증가**하며 alpha=1(순수 LightGBM) 근처가 사실상 최적이었다 — 이득은 다른 노이즈 수준 실험들과 같은 자릿수(+0.00007)에 그쳤다. 원인: 라벨이 소수 피처의 명확한 규칙(2절)으로 생성돼 있어 LightGBM과 Transformer 둘 다 **같은 정답 함수를 근사**하는 셈이 되고, 둘 다 정확도가 비슷하면 실수하는 지점도 상당 부분 겹친다. "모델 계열이 다르면 앙상블이 항상 이득"이라는 일반론이, 신호가 뚜렷하고 이미 성능 상한 근처인 데이터에서는 잘 통하지 않는다는 것을 보여준 사례.
+
+→ 최종 제출은 `submission_v2_tuned.csv`(0.94987)를 계속 유지.
+
+---
+
 # 13. 최종 학습
 
 Feature Engineering과 Hyperparameter Tuning이 완료된 후 전체 Train 데이터로 최종 LightGBM 모델을 다시 학습하였다.
@@ -537,7 +566,7 @@ Raw Train / Test Data
 
 이번 모델링에서는 인위적인 파생변수를 대량 생성하기보다 **EDA와 라벨 생성 규칙 역추적으로 확인된 임계값·상호작용을 LightGBM(Gradient Boosting Tree)이 스스로 분기로 학습하도록** 하고, Feature Engineering 역량은 **결측치 복구**에 집중하였다.
 
-Feature Ablation(5절) 결과, 원본 피처 + 최소한의 결측 복구 피처 2개만으로 이미 이론적 상한(0.9412) 근처에 도달했으며, 여기에 추가 피처를 더하는 시도는 총 6가지(`stress_level` 예측 대치, `sleep_duration` 정밀 회귀 대치, interaction 피처, missing_count, native NaN, 이들의 결합) 모두 오히려 성능을 소폭 떨어뜨렸다. 이는 데이터가 이미 소수의 명확한 규칙으로 생성된 합성 데이터라 원본 피처만으로 트리 모델이 핵심 신호를 충분히 포착했고, 추가 피처는 새 정보가 아니라 중복·노이즈로 작용했기 때문으로 판단된다.
+Feature Ablation(5절) 결과, 원본 피처 + 최소한의 결측 복구 피처 2개만으로 이미 이론적 상한(0.9412) 근처에 도달했으며, 여기에 추가 피처를 더하는 시도는 총 6가지(`stress_level` 예측 대치, `sleep_duration` 정밀 회귀 대치, interaction 피처, missing_count, native NaN, 이들의 결합) 모두 오히려 성능을 소폭 떨어뜨렸다. 심지어 완전히 다른 모델 계열(FT-Transformer)과의 앙상블(12-3절)조차 노이즈 수준(+0.00007)의 이득에 그쳤다 — Transformer 단독 성능(0.94753)은 예상보다 훨씬 좋았지만, 라벨이 소수 피처의 명확한 규칙으로 생성돼 있어 LightGBM과 결국 같은 정답 함수를 근사하게 되고, 그만큼 두 모델의 오답 패턴도 겹쳐서 앙상블 다양성 효과가 거의 없었다. 이는 데이터가 이미 소수의 명확한 규칙으로 생성된 합성 데이터라 원본 피처만으로 트리 모델이 핵심 신호를 충분히 포착했고, 추가 피처나 다른 모델과의 결합은 새 정보가 아니라 중복·노이즈로 작용했기 때문으로 판단된다.
 
 클래스 불균형은 `class_weight`가 아니라 **예측 시점의 사전확률 보정**(`argmax P(c|x)/P(c)`)으로 처리하였고, 이 결정규칙 하나가 plain argmax 대비 +0.074라는 압도적인 개선을 만들어 이번 프로젝트에서 가장 큰 지렛대였다. `class_weight`와 사전확률 보정을 동시에 적용하는 이중보정은 명확히 해롭다는 것도 실험으로 확인하였다.
 
