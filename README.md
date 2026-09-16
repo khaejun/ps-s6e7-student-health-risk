@@ -21,6 +21,8 @@ Kaggle: https://www.kaggle.com/competitions/playground-series-s6e7
 | `notebooks/05_stress_level_imputation.ipynb` | `stress_level` 예측 대치 실험 (기각) |
 | `notebooks/06_sleep_duration_regression.ipynb` | `sleep_duration` 회귀 기반 정밀 대치 실험 (기각) |
 | `notebooks/07_interaction_and_native_nan.ipynb` | Interaction/missing_count/Native NaN 실험 (기각) |
+| `notebooks/08_transformer_ensemble.ipynb` | FT-Transformer + LightGBM 앙상블 실험 (기각) |
+| `notebooks/09_missing_segment_specialist.ipynb` | 결측 2개 이상 세그먼트 전용 서브모델 실험 (기각, 최종) |
 
 ## 데이터 준비
 
@@ -34,7 +36,7 @@ Kaggle 대회 데이터는 재배포 제한 및 용량 문제로 이 저장소�
    ├── test.csv
    └── sample_submission.csv
    ```
-3. `notebooks/01_preprocessing.ipynb`부터 순서대로 실행 (03~07은 `playground-series-s6e7/processed/cv_folds.csv`를 공유하므로 03을 먼저 실행해야 함)
+3. `notebooks/01_preprocessing.ipynb`부터 순서대로 실행 (03~09는 `playground-series-s6e7/processed/cv_folds.csv`를 공유하므로 03을 먼저 실행해야 함)
 
 또는 Kaggle API가 설정돼 있다면:
 ```bash
@@ -44,7 +46,7 @@ cd playground-series-s6e7 && unzip playground-series-s6e7.zip
 
 ## 실행 환경
 
-`notebooks/03`~`07`은 LightGBM(+Optuna)이 필요합니다.
+`notebooks/03`~`09`는 LightGBM(+Optuna)이 필요합니다(`08`은 추가로 PyTorch도 필요).
 ```bash
-pip install lightgbm optuna pandas scikit-learn numpy matplotlib seaborn
+pip install lightgbm optuna torch pandas scikit-learn numpy matplotlib seaborn
 ```
