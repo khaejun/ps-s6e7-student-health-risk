@@ -13,7 +13,8 @@ Kaggle: https://www.kaggle.com/competitions/playground-series-s6e7
 - [x] `sleep_duration` 회귀 기반 정밀 대치 (`notebooks/06_sleep_duration_regression.ipynb`) — **애매한 결과. 대치 자체는 개선(RMSE ↓, 경계판정 ↑)됐지만 전체 CV는 -0.00013로 노이즈 수준. 최종본은 04 그대로 유지**
 - [x] Interaction 피처 + missing_count + Native NaN 실험 (`notebooks/07_interaction_and_native_nan.ipynb`, 팀원 XGBoost 리포트 아이디어 차용) — **전부 실패. 최종본은 04 그대로 유지**
 - [x] FT-Transformer + LightGBM 앙상블 (`notebooks/08_transformer_ensemble.ipynb`) — **Transformer 단독 0.94753(선전했으나 LightGBM보다 낮음), 최적 블렌딩 0.94994로 +0.00007(노이즈 수준). 최종본은 04 그대로 유지**
-- [ ] 결측 2개 이상 겹친 행 처리 — 다음 단계 (남은 유일한 실질적 개선 여지, 다만 표본이 작아 기대 효과는 제한적)
+- [x] 결측 2개 이상 겹친 행 전용 서브모델 (`notebooks/09_missing_segment_specialist.ipynb`) — **명확히 실패. 표본 부족(13,000여 행)으로 전용 서브모델이 글로벌 모델보다 오히려 나쁨(0.7353 vs 0.7428), 개선폭 +0.00000. 최종본은 04 그대로 유지**
+- [x] **모델링 마무리** — 총 7가지 개선 시도(예측 대치 2, 피처엔지니어링 3, 모델 앙상블 1, 결측 세그먼트 서브모델 1) 전부 실패로 확인, `submission_v2_tuned.csv`(0.94987)를 최종 결과로 확정
 - [ ] 제출
 
 ## 프로젝트 구조
@@ -28,7 +29,8 @@ Kaggle: https://www.kaggle.com/competitions/playground-series-s6e7
 │   ├── 05_stress_level_imputation.ipynb  # stress_level 예측 대치 실험 (완료, 기각)
 │   ├── 06_sleep_duration_regression.ipynb # sleep_duration 회귀 대치 실험 (완료, 기각)
 │   ├── 07_interaction_and_native_nan.ipynb # interaction/missing_count/native NaN 실험 (완료, 기각)
-│   └── 08_transformer_ensemble.ipynb     # FT-Transformer + LightGBM 앙상블 실험 (완료, 기각)
+│   ├── 08_transformer_ensemble.ipynb     # FT-Transformer + LightGBM 앙상블 실험 (완료, 기각)
+│   └── 09_missing_segment_specialist.ipynb # 결측 2개 이상 세그먼트 전용 서브모델 실험 (완료, 기각)
 └── playground-series-s6e7/
     ├── train.csv / test.csv / sample_submission.csv   # 원본
     └── processed/
@@ -326,17 +328,33 @@ sleep_duration 결측 행만 따로 본 BA: 0.86094.
 
 → **최종 제출은 `submission_v2_tuned.csv`(0.94987)를 계속 유지.** (`submission_v6_transformer_blend.csv`는 저장은 됐으나 baseline과 사실상 동일한 수준이라 새로운 채택 아님.)
 
-## 다음 단계
-`stress_level`/`sleep_duration` 복구, interaction/missing_count/native NaN 추가, Transformer 앙상블까지 총 6개 아이디어가 전부 유의미한 개선을 못 만들었으므로, 남은 개선 여지는 사실상 한 가지로 좁혀짐:
-1. **결측 2개 이상 겹친 행 처리** (약 2.3%, 이산화 기준 BA 0.56~0.81로 가장 취약한 구간) — 이 구간만 따로 떼어 분석/전용 전략 검토. 남은 개선 여지가 가장 많이 몰려있는 유일한 곳 (다만 표본이 작아 기대 효과는 제한적)
-2. (완료, 효과 미미) 모델 다양성/앙상블(class_weight, Transformer 블렌딩), 하이퍼파라미터 튜닝 — 실험으로 +0.0001 미만 확인됨
-3. (완료, 기각) `stress_level` 예측 대치 — 실험으로 -0.00025 확인됨, 재시도 불필요
-4. (완료, 기각) `sleep_duration` 회귀 기반 정밀 대치 — 대치 품질은 개선됐으나 최종 CV는 -0.00013로 노이즈 수준, 재시도 불필요
-5. (완료, 기각) Interaction 피처 / missing_count / native NaN — 셋 다 -0.0001~-0.0002 수준으로 하락, 재시도 불필요
-6. (완료, 기각) FT-Transformer + LightGBM 앙상블 — Transformer 단독은 선전(0.94753)했으나 블렌딩 이득은 +0.00007로 노이즈 수준, 재시도 불필요
+## 결측 2개 이상 겹친 행 전용 서브모델 실험 — 명확히 기각 (완료 — `notebooks/09_missing_segment_specialist.ipynb`)
+
+남아있던 마지막 아이디어: 핵심 3피처 중 2개 이상 결측인 행(16,519개, 2.39%)만 따로 떼어 전용 서브모델을 만들고, 글로벌 모델(04) 대신 이 구간에서만 서브모델 예측을 쓰는 라우팅 앙상블을 시도하였다. 비교군 3가지: ① 글로벌 모델(04) 그대로, ② 결측 패턴별(`XX.`/`X.X`/`.XX`/`XXX`) train 내 조건부 최빈 클래스 휴리스틱, ③ 이 구간 행(13,000여 개)만으로 보수적 하이퍼파라미터(`num_leaves=7`, `max_depth=4`, `min_child_samples=80`)로 학습한 전용 LightGBM.
+
+| 방식 | 이 구간 balanced accuracy |
+| --- | --- |
+| **글로벌 모델(04)** | **0.7428** ← 최고 |
+| 휴리스틱(패턴별 최빈클래스) | 0.3333 |
+| 전용 서브모델 | 0.7353 |
+
+- 휴리스틱이 0.3333으로 무너진 이유: 이 구간 안에서도 at-risk가 85.7%로 여전히 압도적이라, 패턴별 최빈클래스가 결국 거의 항상 at-risk만 찍는 "한 클래스만 찍기" 함정에 그대로 걸림
+- 전용 서브모델이 글로벌 모델보다 낮은 이유: 13,000여 개라는 작은 표본으로는, 69만 행 전체로 학습해서 "이 구간에도 남아있는 나머지 정보"(예: `XX.` 패턴은 `physical_activity_level`이 남아있음)를 이미 충분히 학습한 글로벌 모델을 이기지 못함. 표본 크기가 지배적인 상황에서는 세그먼트 특화가 오히려 손해라는 것을 보여준 사례.
+
+라우팅 앙상블 결과 최고 성능 방식이 글로벌 모델 자신이었으므로, 전체 CV는 **정확히 동일**(0.94988, 개선폭 +0.00000). → **최종 제출은 `submission_v2_tuned.csv`(0.94987)를 계속 유지.**
+
+## 최종 결론 — 모델링 마무리
+`stress_level`/`sleep_duration` 예측·회귀 대치, interaction/missing_count/native NaN 추가, Transformer 앙상블, 결측 세그먼트 전용 서브모델까지 **총 7가지 개선 아이디어가 전부 실패**로 확인되었다.
+
+1. (완료, 기각) `stress_level` 예측 대치 — 실험으로 -0.00025 확인됨
+2. (완료, 기각) `sleep_duration` 회귀 기반 정밀 대치 — 대치 품질은 개선됐으나 최종 CV는 -0.00013로 노이즈 수준
+3. (완료, 기각) Interaction 피처 / missing_count / native NaN — 셋 다 -0.0001~-0.0002 수준으로 하락
+4. (완료, 기각) FT-Transformer + LightGBM 앙상블 — Transformer 단독은 선전(0.94753)했으나 블렌딩 이득은 +0.00007로 노이즈 수준
+5. (완료, 기각) 결측 2개 이상 겹친 행 전용 서브모델 — 표본 부족으로 글로벌 모델보다 오히려 나쁨, 개선폭 +0.00000
+6. (완료, 효과 미미) 하이퍼파라미터 튜닝 — +0.00007
 7. (완료) `diet_type`/`gender`/`heart_rate`/`water_intake`는 gain importance로도 무의미함이 재확인됨 — 추가 피처엔지니어링 불필요
 
-**현재까지 결론**: `submission_v2_tuned.csv`(CV balanced accuracy 0.94987)가 사실상의 실질적 상한으로 보임. 지금까지 시도한 6개의 개선 아이디어(예측 대치 2개, 피처 엔지니어링 3개, 모델 앙상블 1개)가 전부 실패했다는 것 자체가, 이 파이프라인이 "원본 피처 + 최소한의 결측 복구 + 올바른 결정규칙"만으로 이미 국소 최적점에 도달했다는 강한 증거임. 결측 2개 이상 겹친 행(전체의 2.3%, 약 15,900행)을 파고들어도 표본 자체가 작아서 기대 개선폭은 크지 않을 가능성이 높음 — 이 대회는 "더 나은 모델/피처"보다 "라벨 생성 규칙을 정확히 찾아내고 사전확률 보정을 올바르게 적용하는 것"이 점수의 대부분을 결정한다는 게 여러 번의 실험으로 재확인됨.
+**최종 결론**: `submission_v2_tuned.csv`(CV balanced accuracy **0.94987**)를 이 프로젝트의 최종 결과로 확정한다. 7가지 서로 다른 방향(예측 대치, 회귀 대치, 명시적 interaction, 결측 집계, native NaN 처리, 완전히 다른 모델 계열과의 앙상블, 세그먼트 전용 서브모델)의 개선 시도가 전부 실패했다는 것은 우연이 아니라, "원본 피처 + 최소한의 결측 복구(2개) + 사전확률 보정"만으로 이 데이터가 허용하는 국소 최적점에 이미 도달했다는 강한 증거다. 이 대회는 "더 나은 모델/피처를 찾는 문제"가 아니라 "라벨 생성 규칙을 정확히 찾아내고, balanced accuracy에 맞는 결정규칙(사전확률 보정)을 올바르게 적용하는 문제"였다는 것이 프로젝트 전체를 관통하는 핵심 교훈이다.
 
 ## 출처
 - Yao Yan, Walter Reade, Elizabeth Park. Predicting Student Health Risk. https://kaggle.com/competitions/playground-series-s6e7, 2026. Kaggle.
