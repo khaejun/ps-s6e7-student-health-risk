@@ -146,10 +146,17 @@ submission.to_csv("processed/submission_v2_tuned.csv", index=False)
 | (참고) 대회 1위 | 0.95085 |
 | (참고) 라벨 생성 규칙 3피처만으로 이산화한 이론적 상한 | 0.9412 |
 
-## 시도했으나 채택하지 않은 것 (재시도 불필요)
+## 시도했으나 채택하지 않은 것 (재시도 불필요) — 총 8건, 전부 기각
 
 | 시도 | 결과 | 노트북 |
 |---|---|---|
 | `stress_level` 예측 대치 (다른 피처로 보조 분류기 학습) | -0.00025, 신호 거의 없음(보조모델 accuracy 46.1% vs baseline 43.1%) | `05_stress_level_imputation.ipynb` |
 | `sleep_duration` 회귀 기반 정밀 대치 | 대치 자체는 개선(RMSE, 경계판정↑)됐으나 최종 CV는 -0.00013로 노이즈 수준 | `06_sleep_duration_regression.ipynb` |
-| 모델 다양성/앙상블, 추가 하이퍼파라미터 탐색 | 이론상 기대효과 +0.001 미만 | — |
+| Interaction 피처 (threshold dummy, `rule_branch` 등) | -0.00024 | `07_interaction_and_native_nan.ipynb` |
+| `missing_count` 집계 피처 | -0.00010 | `07_interaction_and_native_nan.ipynb` |
+| Native NaN 처리(수치형 median 미대치) | -0.00010 | `07_interaction_and_native_nan.ipynb` |
+| FT-Transformer + LightGBM 앙상블 | Transformer 단독 0.94753(선전)까지는 갔으나 블렌딩 이득 +0.00007로 노이즈 수준 | `08_transformer_ensemble.ipynb` |
+| 결측 2개 이상 겹친 행(2.39%) 전용 서브모델 | 표본 부족(13,000여 행)으로 글로벌 모델보다 오히려 나쁨(0.7353 vs 0.7428), 개선폭 +0.00000 | `09_missing_segment_specialist.ipynb` |
+| 모델 다양성/앙상블, 추가 하이퍼파라미터 탐색 (일반) | 이론상 기대효과 +0.001 미만 | — |
+
+**결론**: 8가지 서로 다른 방향(예측 대치 2, 피처엔지니어링 3, 모델 앙상블 1, 세그먼트 서브모델 1, 튜닝)이 전부 실패 → `submission_v2_tuned.csv`(0.94987)를 이 프로젝트의 최종 결과로 확정.
